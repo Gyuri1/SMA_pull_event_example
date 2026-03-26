@@ -2,8 +2,9 @@
 """
 tg_pull_events.py
 
-Pulls structured JSON-formatted events from Cisco Secure Malware Analytics
-(formerly Threat Grid) and writes them to a log file.
+Pulls sample/submission data from Cisco Secure Malware Analytics
+(formerly Threat Grid) using the /api/v2/samples endpoint and writes
+ONLY the raw JSON response to a log file.
 
 Usage:
     python3 tg_pull_events.py                          # defaults to /var/log/Threatgrid.log
@@ -21,10 +22,8 @@ Cisco Secure Malware Analytics API Reference:
 
 import argparse
 import json
-import logging
 import os
 import sys
-from logging.handlers import RotatingFileHandler
 
 import requests
 
@@ -53,8 +52,8 @@ def parse_arguments() -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(
         description=(
-            "Pull structured JSON events from Cisco Secure Malware Analytics "
-            "(Threat Grid) and write them to a log file."
+            "Pull sample/submission data from Cisco Secure Malware Analytics "
+            "(Threat Grid) and write the JSON events to a log file."
         )
     )
     parser.add_argument(
@@ -69,122 +68,108 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-# ── Logging configuration ──────────────────────────────────────────────────
-
-def configure_logging(log_file: str) -> logging.Logger:
-    """
-    Configures and returns a logger that writes to the specified file and
-    to stdout.
-
-    Args:
-        log_file: Absolute or relative path to the desired log file.
-
-    Returns:
-        Configured Logger instance.
-    """
-    logger = logging.getLogger("ThreatGridEvents")
-    logger.setLevel(logging.INFO)
-
-    # Avoid adding duplicate handlers if this function is called more than once
-    if logger.handlers:
-        return logger
-
-    # Ensure the parent directory exists
-    log_dir = os.path.dirname(log_file)
-    if log_dir and not os.path.exists(log_dir):
-        try:
-            os.makedirs(log_dir, exist_ok=True)
-        except OSError as e:
-            sys.exit(f"ERROR: Cannot create log directory '{log_dir}': {e}")
-
-    # RotatingFileHandler — 10 MB max, 5 backups
-    file_handler = RotatingFileHandler(
-        log_file, maxBytes=10 * 1024 * 1024, backupCount=5
-    )
-    file_handler.setLevel(logging.INFO)
-
-    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-
-    # Console handler for interactive debugging
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
-
-    return logger
-
-
 # ── API interaction ─────────────────────────────────────────────────────────
 
-def get_threat_grid_submissions(
-    api_key: str,
-    base_url: str,
-    logger: logging.Logger,
-) -> dict | None:
+def get_samples(api_key: str, base_url: str) -> dict | None:
     """
-    Fetches submission aggregation events from Cisco Secure Malware Analytics.
+    Fetches sample/submission records from Cisco Secure Malware Analytics.
 
     Endpoint:
-        GET /api/v3/aggregations/submissions
+        GET /api/v2/samples
+
+    This endpoint returns metadata for submitted samples including:
+      - Sample ID
+      - SHA256, SHA1, MD5 hashes
+      - File name and type
+      - Threat score
+      - Submission timestamp
+      - Analysis status
+      - OS and VM used for analysis
 
     Docs: https://panacea.threatgrid.com/mask/doc/mask/index
+
+    The /api/v2/ endpoints accept the API key as a query parameter.
 
     Args:
         api_key:  Cisco Secure Malware Analytics API key.
         base_url: Base URL of the Threat Grid cloud instance.
-        logger:   Logger instance for recording errors.
 
     Returns:
         Parsed JSON response as a Python dict, or None on failure.
     """
 
-    url = f"{base_url}/api/v3/aggregations/submissions"
+    url = f"{base_url}/api/v2/samples"
 
     headers = {
         "Accept": "application/json",
-        "Authorization": f"bearer {api_key}",
     }
 
+    # The v2 samples endpoint accepts the API key as a query parameter.
+    # Common filters:
+    #   - after/before : ISO 8601 timestamps to bound the query window
+    #   - limit        : max number of records to return (default 20, max 1000)
+    #   - offset       : pagination offset
+    #   - org_only     : if true, return only samples from your organisation
+    #   - state        : filter by analysis state (e.g. "succ", "fail")
     params = {
-        "span": "2026-03-07T23:59:59+01:00/2026-03-14T22:53:11+01:00",
-        "visibility": "org",
-        "buckets": "day|status",
-        "tz": "Europe/Budapest",
-        "tg-dc": "US",
+        "api_key": api_key,
+        "after": "2026-03-07T00:00:00Z",
+        "before": "2026-03-14T23:59:59Z",
+        "org_only": "true",
+        "limit": 500,
+        "offset": 0,
     }
 
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=30)
+        response = requests.get(url, headers=headers, params=params, timeout=60)
         response.raise_for_status()
         return response.json()
 
     except requests.exceptions.HTTPError as http_err:
-        logger.error(
-            "HTTP error: %s | Status: %s | Body: %s",
-            http_err, response.status_code, response.text,
+        print(
+            f"[ERROR] HTTP error: {http_err} | "
+            f"Status: {response.status_code} | Body: {response.text}",
+            file=sys.stderr,
         )
     except requests.exceptions.ConnectionError as conn_err:
-        logger.error("Connection error: %s", conn_err)
+        print(f"[ERROR] Connection error: {conn_err}", file=sys.stderr)
     except requests.exceptions.Timeout as timeout_err:
-        logger.error("Timeout error: %s", timeout_err)
+        print(f"[ERROR] Timeout error: {timeout_err}", file=sys.stderr)
     except requests.exceptions.RequestException as req_err:
-        logger.error("Request error: %s", req_err)
+        print(f"[ERROR] Request error: {req_err}", file=sys.stderr)
 
     return None
 
 
-def save_events_to_log(events: dict, logger: logging.Logger) -> None:
+def save_events_to_file(events: dict, log_file: str) -> None:
     """
-    Serialises the event data as structured JSON and writes it to the log.
+    Writes ONLY the raw structured JSON sample data to the specified file.
+    No timestamps, log levels, or diagnostic metadata are included.
 
     Args:
-        events: The parsed JSON response dictionary from the API.
-        logger: Logger instance used for output.
+        events:   The parsed JSON response dictionary from the API.
+        log_file: Path to the output file.
     """
-    json_str = json.dumps(events, indent=4, default=str)
-    logger.info("Threat Grid Events:\n%s", json_str)
+    log_dir = os.path.dirname(log_file)
+    if log_dir and not os.path.exists(log_dir):
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+        except OSError as e:
+            print(
+                f"[ERROR] Cannot create log directory '{log_dir}': {e}",
+                file=sys.stderr,
+            )
+            return
+
+    try:
+        with open(log_file, "a", encoding="utf-8") as f:
+            json.dump(events, f, indent=4, default=str)
+            f.write("\n")
+    except OSError as e:
+        print(
+            f"[ERROR] Cannot write to '{log_file}': {e}",
+            file=sys.stderr,
+        )
 
 
 # ── Main entry point ───────────────────────────────────────────────────────
@@ -193,20 +178,21 @@ def main() -> None:
     args = parse_arguments()
     log_file = args.logfile
 
-    logger = configure_logging(log_file)
+    print(f"[INFO] Log file path: {log_file}")
+    print("[INFO] Fetching samples from Cisco Secure Malware Analytics …")
 
-    logger.info("Log file path: %s", log_file)
-    logger.info("Starting Cisco Secure Malware Analytics event pull …")
-
-    result = get_threat_grid_submissions(
-        api_key=API_KEY, base_url=BASE_URL, logger=logger
-    )
+    result = get_samples(api_key=API_KEY, base_url=BASE_URL)
 
     if result:
-        save_events_to_log(result, logger)
-        logger.info("Events successfully written to %s", log_file)
+        save_events_to_file(result, log_file)
+        # Report count if available
+        items = result.get("data", {}).get("items", [])
+        print(f"[INFO] {len(items)} sample(s) written to {log_file}")
     else:
-        logger.warning("Failed to retrieve events from Threat Grid.")
+        print(
+            "[WARNING] Failed to retrieve samples from Threat Grid.",
+            file=sys.stderr,
+        )
 
 
 if __name__ == "__main__":
