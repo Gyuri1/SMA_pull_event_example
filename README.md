@@ -2,7 +2,7 @@ SMA Pull Events
 ====
 
 
-This python example pulls structured JSON-formatted events from Cisco Secure Malware Analytics
+This python example script pulls structured JSON-formatted events from Cisco Secure Malware Analytics
 (formerly Threat Grid) and writes them to a log file.
 
 
@@ -13,6 +13,8 @@ This python example pulls structured JSON-formatted events from Cisco Secure Mal
 
  Download all of these files into local working directory!
 
+ Please update the API_KEY, BASE_URL variables according to Your setup!
+ 
 # How to use:  
 
  1. Use the default log path (`/var/log/Threatgrid.log`)  
