@@ -18,6 +18,9 @@ Requirements:
 
 Cisco Secure Malware Analytics API Reference:
   https://panacea.threatgrid.com/mask/doc/mask/index
+
+Version 1.0
+  
 """
 
 import argparse
