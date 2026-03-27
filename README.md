@@ -32,15 +32,15 @@ This python example script pulls structured JSON-formatted events from Cisco Sec
 
 # Important Notes
 
-- Pagination — The limit parameter is set to 500. If your organisation has more submissions in the time window, you will need to paginate by incrementing offset. The response includes current_item_count to help determine if more pages exist.
+** Pagination ** — The limit parameter is set to 500. If your organisation has more submissions in the time window, you will need to paginate by incrementing offset. The response includes current_item_count to help determine if more pages exist.
 
-- Time window — Adjust the after and before parameters in the params dict to match your desired query range.
+** Time window ** — Adjust the after and before parameters in the params dict to match your desired query range.
 
-- Permissions — The user running the script must have write access to the target log file path.
+** Permissions ** — The user running the script must have write access to the target log file path.
 
-- Config security — Protect tg_config.py with chmod 600 tg_config.py.
+** Config security ** — Protect tg_config.py with chmod 600 tg_config.py.
 
-- API key in URL — The v2 endpoint passes the API key as a query parameter. 
+** API key in URL ** — The v2 endpoint passes the API key as a query parameter. 
 Ensure you use HTTPS (which the default base URL does) so the key is encrypted in transit.
 
 
