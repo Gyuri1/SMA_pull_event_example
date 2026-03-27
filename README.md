@@ -2,7 +2,7 @@ SMA Pull Events
 ====
 
 
-This python example script pulls structured JSON-formatted events from Cisco Secure Malware Analytics
+This python example script pulls structured JSON-formatted **sample/submission** records, events from Cisco Secure Malware Analytics
 (formerly Threat Grid) and writes them to a log file.
 
 
